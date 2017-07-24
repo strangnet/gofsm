@@ -18,9 +18,11 @@ _cgo_gotypes.go
 _cgo_export.*
 
 _testmain.go
+debug
 
 *.exe
 *.test
 *.prof
 
+# misc
 .vscode/
