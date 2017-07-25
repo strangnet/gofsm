@@ -77,15 +77,6 @@ func (f *FSM) State() string {
 	return f.state
 }
 
-// SetState explicitly sets a new current state regardless.
-// of current state
-func (f *FSM) SetState(state string) {
-	f.stateMu.Lock()
-	defer f.stateMu.Unlock()
-	f.state = state
-	return
-}
-
 // Is returns whether the current state is the supplied state.
 func (f *FSM) Is(state string) bool {
 	f.stateMu.RLock()

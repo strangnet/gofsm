@@ -13,7 +13,10 @@
 //    limitations under the License.
 package gofsm
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestNewFSM(t *testing.T) {
 	fsm := NewFSM(
@@ -27,4 +30,17 @@ func TestNewFSM(t *testing.T) {
 	if fsm.State() != "closed" {
 		t.Error("Expected state was 'closed'")
 	}
+}
+
+func ExampleFSM_State() {
+	fsm := NewFSM(
+		"closed",
+		Transitions{
+			{Name: "open", From: []string{"closed"}, To: "open"},
+			{Name: "close", From: []string{"open"}, To: "closed"},
+		},
+		Methods{},
+	)
+	fmt.Println(fsm.State())
+	// Output: closed
 }
