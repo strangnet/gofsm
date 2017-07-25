@@ -26,6 +26,7 @@
 package gofsm
 
 import (
+	"errors"
 	"sync"
 )
 
@@ -34,7 +35,7 @@ type FSM struct {
 	state   string
 	pending bool
 
-	transitions map[string]Transition
+	transitions map[TransitionKey]Transition
 	methods     map[string]Method
 
 	stateMu sync.RWMutex
@@ -63,8 +64,14 @@ type Methods map[string]Method
 func NewFSM(init string, transitions []Transition, methods Methods) *FSM {
 	fsm := &FSM{
 		state:       init,
-		transitions: make(map[string]Transition),
+		transitions: make(map[TransitionKey]Transition),
 		methods:     make(map[string]Method),
+	}
+
+	for _, t := range transitions {
+		for _, from := range t.From {
+			fsm.transitions[TransitionKey{t.Name, from}] = t
+		}
 	}
 
 	return fsm
@@ -79,9 +86,7 @@ func (f *FSM) State() string {
 
 // Is returns whether the current state is the supplied state.
 func (f *FSM) Is(state string) bool {
-	f.stateMu.RLock()
-	defer f.stateMu.RUnlock()
-	return state == f.state
+	return state == f.State()
 }
 
 func (f *FSM) isPending() bool {
@@ -89,6 +94,7 @@ func (f *FSM) isPending() bool {
 }
 
 // Can checks if a transition is valid from the current state.
+// TODO: Proper implementation
 func (f *FSM) Can(transition string) bool {
 	f.stateMu.RLock()
 	defer f.stateMu.RUnlock()
@@ -99,4 +105,34 @@ func (f *FSM) Can(transition string) bool {
 // Cannot checks if a transition is not valid from the current state.
 func (f *FSM) Cannot(transition string) bool {
 	return !f.Can(transition)
+}
+
+// Transition executes a transition
+func (f *FSM) Transition(transition string) error {
+	f.transMu.Lock()
+	defer f.transMu.Unlock()
+
+	f.stateMu.RLock()
+	defer f.stateMu.RUnlock()
+
+	t, ok := f.transitions[TransitionKey{transition, f.state}]
+	if !ok {
+		return errors.New("Transition is not valid")
+	}
+
+	f.stateMu.RUnlock()
+
+	f.stateMu.Lock()
+	f.state = t.To
+	f.stateMu.Unlock()
+
+	f.stateMu.RLock()
+
+	return nil
+}
+
+// TransitionKey is the key used for mapping the transition in the fsm
+type TransitionKey struct {
+	Name string
+	From string
 }

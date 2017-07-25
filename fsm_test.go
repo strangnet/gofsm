@@ -32,6 +32,58 @@ func TestNewFSM(t *testing.T) {
 	}
 }
 
+func TestIs_ReturnsTrueForCurrentState(t *testing.T) {
+	fsm := NewFSM(
+		"closed",
+		Transitions{
+			{},
+		},
+		Methods{},
+	)
+
+	if !fsm.Is(fsm.State()) {
+		t.Error("Current state mismatch")
+	}
+}
+
+func TestTransition_WithValidTransition(t *testing.T) {
+	fsm := NewFSM(
+		"closed",
+		Transitions{
+			{Name: "open", From: []string{"closed"}, To: "open"},
+			{Name: "close", From: []string{"open"}, To: "closed"},
+		},
+		Methods{},
+	)
+
+	err := fsm.Transition("open")
+	if err != nil {
+		t.Error("Transitioning should have worked")
+	}
+	if fsm.State() != "open" {
+		t.Error("State after the transition was expected to be 'open'")
+	}
+}
+
+func TestTransition_WithInvalidTransition(t *testing.T) {
+	fsm := NewFSM(
+		"closed",
+		Transitions{
+			{Name: "open", From: []string{"closed"}, To: "open"},
+			{Name: "close", From: []string{"open"}, To: "closed"},
+		},
+		Methods{},
+	)
+
+	err := fsm.Transition("push")
+	if err == nil {
+		t.Error("Transitioning should not have worked")
+	}
+	if fsm.State() != "closed" {
+		t.Errorf("State should still be 'closed', was %v", fsm.State())
+	}
+}
+
 func ExampleFSM_State() {
 	fsm := NewFSM(
 		"closed",
