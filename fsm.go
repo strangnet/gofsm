@@ -14,10 +14,10 @@
 
 // Package gofsm implements a finite state machine
 //
-// It is heavily based on the work done by Jake Gordon in:
+// It is based on the work done by Jake Gordon in JSM:
 // https://github.com/jakesgordon/javascript-state-machine
 //
-// Also influenced by a Python implementation:
+// Also influenced by a Python implementation of JSM:
 // https://github.com/mriehl/fysom
 //
 // and another Go library that used an earlier version of JSM as its base
@@ -30,199 +30,109 @@ import (
 	"sync"
 )
 
-type transitioner interface {
-	transition(*FSM) error
-}
-
-// FSM is the state machine
+// FSM is the state machine.
 type FSM struct {
-	state string
+	state   string
+	pending bool
 
-	transitions map[tKey]string
-	methods     map[mKey]Method
-
-	transition      func()
-	transitionerObj transitioner
+	transitions map[TransitionKey]Transition
+	methods     map[string]Method
 
 	stateMu sync.RWMutex
 	transMu sync.Mutex
 }
 
+// Transition defines a command/event (Name) that holds which valid states
+// that it can affect. A Transition can define multiple sources (From) but
+// only a single destination (To).
 type Transition struct {
 	Name string
 	From []string
 	To   string
 }
 
+// Transitions is a helper type that holds a slice of Transitions.
 type Transitions []Transition
 
+// Method is a function type for the lifecycle events to call.
 type Method func(*Transition)
 
+// Methods is helper type that maps a string to a Method.
 type Methods map[string]Method
 
-// NewFSM initializes a new state machine
+// NewFSM initializes a new state machine.
 func NewFSM(init string, transitions []Transition, methods Methods) *FSM {
 	fsm := &FSM{
-		state:           init,
-		transitions:     make(map[tKey]string),
-		methods:         make(map[mKey]Method),
-		transitionerObj: &transitionerStruct{},
+		state:       init,
+		transitions: make(map[TransitionKey]Transition),
+		methods:     make(map[string]Method),
 	}
 
-	allStates := make(map[string]bool)
-	allTransitions := make(map[string]bool)
 	for _, t := range transitions {
 		for _, from := range t.From {
-			fsm.transitions[tKey{t.Name, from}] = t.To
-			allStates[from] = true
-			allStates[t.To] = true
-		}
-		allTransitions[t.Name] = true
-	}
-
-	for name, fn := range methods {
-		var target string
-		var cbType int
-
-		switch {
-		default:
-			target = name
-			if _, ok := allStates[target]; ok {
-				cbType = callbackEnterState
-			} else if _, ok := allTransitions[target]; ok {
-				cbType = callbackAfterTransition
-			}
-		}
-
-		if cbType != callbackNone {
-			fsm.methods[mKey{target, cbType}] = fn
+			fsm.transitions[TransitionKey{t.Name, from}] = t
 		}
 	}
 
 	return fsm
 }
 
+// State returns the current state of an fsm.
 func (f *FSM) State() string {
 	f.stateMu.RLock()
 	defer f.stateMu.RUnlock()
 	return f.state
 }
 
-func (f *FSM) SetState(state string) {
-	f.stateMu.Lock()
-	defer f.stateMu.Unlock()
-	f.state = state
-	return
-}
-
+// Is returns whether the current state is the supplied state.
 func (f *FSM) Is(state string) bool {
+	return state == f.State()
+}
+
+func (f *FSM) isPending() bool {
+	return f.pending
+}
+
+// Can checks if a transition is valid from the current state.
+// TODO: Proper implementation
+func (f *FSM) Can(transition string) bool {
 	f.stateMu.RLock()
 	defer f.stateMu.RUnlock()
-	return state == f.state
+
+	return !f.isPending()
 }
 
-func (f *FSM) IsPending() bool {
-	return false
+// Cannot checks if a transition is not valid from the current state.
+func (f *FSM) Cannot(transition string) bool {
+	return !f.Can(transition)
 }
 
-func (f *FSM) Can(transition string, args ...interface{}) (bool, error) {
-	f.stateMu.RLock()
-	defer f.stateMu.RUnlock()
-	to, ok := f.transitions[tKey{transition, f.state}]
-	if !ok || (f.transition != nil) {
-		return false, nil
-	}
-
-	e := &Event{f, transition, f.state, to, nil, args, false, false}
-	err := f.beforeEventCallback(e)
-
-	return err == nil, err
-}
-
-func (f *FSM) Cannot(transition string) (bool, error) {
-	ok, err := f.Can(transition)
-	return !ok, err
-}
-
-func (f *FSM) Transition() error {
+// Transition executes a transition
+func (f *FSM) Transition(transition string) error {
 	f.transMu.Lock()
 	defer f.transMu.Unlock()
-	return f.doTransition()
-}
 
-func (f *FSM) doTransition() error {
-	return f.transitionerObj.transition(f)
-}
+	f.stateMu.RLock()
+	defer f.stateMu.RUnlock()
 
-type transitionerStruct struct{}
-
-func (t transitionerStruct) transition(f *FSM) error {
-	if f.transition == nil {
-		return errors.New("Error")
+	t, ok := f.transitions[TransitionKey{transition, f.state}]
+	if !ok {
+		return errors.New("Transition is not valid")
 	}
-	f.transition()
-	f.transition = nil
-	return nil
-}
 
-func (f *FSM) beforeEventCallback(e *Event) error {
+	f.stateMu.RUnlock()
 
-	return nil
-}
+	f.stateMu.Lock()
+	f.state = t.To
+	f.stateMu.Unlock()
 
-func (f *FSM) leaveStateCallback(e *Event) error {
+	f.stateMu.RLock()
 
 	return nil
 }
 
-func (f *FSM) enterStateCallback(e *Event) error {
-
-	return nil
-}
-
-func (f *FSM) afterEventCallback(e *Event) error {
-
-	return nil
-}
-
-const (
-	callbackNone int = iota
-	callbackBeforeTransition
-	callbackLeaveState
-	callbackEnterState
-	callbackAfterTransition
-)
-
-type mKey struct {
-	target string
-	cbType int
-}
-
-type tKey struct {
-	transition string
-
-	src string
-}
-
-type Event struct {
-	FSM   *FSM
-	Event string
-	From  string
-	To    string
-	Err   error
-	Args  []interface{}
-
-	aborted bool
-	async   bool
-}
-
-func (e *Event) Abort(err ...error) {
-	e.aborted = true
-	if len(err) > 0 {
-		e.Err = err[0]
-	}
-}
-
-func (e *Event) Async() {
-	e.async = true
+// TransitionKey is the key used for mapping the transition in the fsm
+type TransitionKey struct {
+	Name string
+	From string
 }
