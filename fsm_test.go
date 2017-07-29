@@ -15,6 +15,8 @@ package gofsm
 
 import (
 	"fmt"
+	"reflect"
+	"sort"
 	"testing"
 )
 
@@ -29,6 +31,44 @@ func TestNewFSM(t *testing.T) {
 
 	if fsm.State() != "closed" {
 		t.Error("Expected state was 'closed'")
+	}
+}
+
+func TestNewFSM_AllStates(t *testing.T) {
+	fsm := NewFSM(
+		"closed",
+		Transitions{
+			{Name: "open", From: []string{"closed"}, To: "open"},
+			{Name: "close", From: []string{"open"}, To: "closed"},
+		},
+		Methods{},
+	)
+
+	found := fsm.AllStates()
+	sort.StringSlice(found).Sort()
+	expected := []string{"open", "closed"}
+	sort.StringSlice(expected).Sort()
+	if !reflect.DeepEqual(found, expected) {
+		t.Errorf("Expected AllStates() to return the defined states. Got = %v, want = %v", found, expected)
+	}
+}
+
+func TestNewFSM_AllTransitions(t *testing.T) {
+	fsm := NewFSM(
+		"closed",
+		Transitions{
+			{Name: "open", From: []string{"closed"}, To: "open"},
+			{Name: "close", From: []string{"open"}, To: "closed"},
+		},
+		Methods{},
+	)
+
+	found := fsm.AllTransitions()
+	sort.StringSlice(found).Sort()
+	expected := []string{"open", "close"}
+	sort.StringSlice(expected).Sort()
+	if !reflect.DeepEqual(found, expected) {
+		t.Errorf("Expected AllTransitions() to return the defined transitions. Got = %v, want = %v", found, expected)
 	}
 }
 
@@ -56,7 +96,7 @@ func TestTransition_WithValidTransition(t *testing.T) {
 		Methods{},
 	)
 
-	err := fsm.Transition("open")
+	err := fsm.Transit("open")
 	if err != nil {
 		t.Error("Transitioning should have worked")
 	}
@@ -75,13 +115,47 @@ func TestTransition_WithInvalidTransition(t *testing.T) {
 		Methods{},
 	)
 
-	err := fsm.Transition("push")
+	err := fsm.Transit("push")
 	if err == nil {
 		t.Error("Transitioning should not have worked")
 	}
 	if fsm.State() != "closed" {
 		t.Errorf("State should still be 'closed', was %v", fsm.State())
 	}
+}
+
+func TestFSM_GenericMethods(t *testing.T) {
+	beforeTransition := false
+	leaveState := false
+	enterState := false
+	afterTransition := false
+
+	fsm := NewFSM(
+		"closed",
+		Transitions{
+			{Name: "open", From: []string{"closed"}, To: "open"},
+		},
+		Methods{
+			"before_transition": func(t *Transition) {
+				beforeTransition = true
+			},
+			"leave_state": func(t *Transition) {
+				leaveState = true
+			},
+			"enter_state": func(t *Transition) {
+				enterState = true
+			},
+			"after_transition": func(t *Transition) {
+				afterTransition = true
+			},
+		},
+	)
+
+	fsm.Transit("open")
+	if !(beforeTransition && leaveState && enterState && afterTransition) {
+		t.Error("Expected all methods to be called")
+	}
+
 }
 
 func ExampleFSM_State() {
